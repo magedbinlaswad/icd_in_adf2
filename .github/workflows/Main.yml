@@ -2,36 +2,26 @@ name: icd_in_adf2
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main
 
 permissions:
-  id-token: write     # for OIDC login to Azure
+  id-token: write
   contents: read
-
-concurrency:
-  group: adf-cicd-${{ github.ref }}
-  cancel-in-progress: false
-
-env:
-  # Re-use these across steps
-  DEV_RESOURCE_ID: "/subscriptions/48773b9f-3806-4461-bb01-3e2a4253f178/resourceGroups/re_group987/providers/Microsoft.DataFactory/factories/datafactoryclass543"
-  EXPORT_DIR: ExportedArmTemplate
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # Installs Node and the npm packages saved in build/package.json
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v3.4.1
         with:
           node-version: 18.x
-          cache: npm
-          cache-dependency-path: build/package-lock.json
 
+      # (optional) quick check so you can see the build folder is there
       - name: Sanity check workspace
         run: |
           echo "pwd=$(pwd)"
@@ -39,60 +29,55 @@ jobs:
           echo "--- build dir ---"
           ls -la build || true
 
-      - name: Install ADF Utilities
+      - name: install ADF Utilities package
         working-directory: build
-        run: npm ci
+        run: npm install
 
-      # Validate ADF JSON in repo against the DEV factory (no changes in Azure)
+      # Validates all of the Data Factory resources in the repository.
       - name: Validate
         working-directory: build
         run: |
-          npm run build validate "$GITHUB_WORKSPACE/" "${DEV_RESOURCE_ID}"
+          RESOURCE_ID="/subscriptions/48773b9f-3806-4461-bb01-3e2a4253f178/resourceGroups/re_group987/providers/Microsoft.DataFactory/factories/datafactoryclass543"
+          npm run build validate "$GITHUB_WORKSPACE/" "$RESOURCE_ID"
 
-      # Export ARM template & parameters from DEV metadata (to be deployed to PROD)
-      - name: Generate ARM template
+      # Export ARM template & parameters
+      - name: Validate and Generate ARM template
         working-directory: build
         run: |
-          npm run build export "$GITHUB_WORKSPACE/" "${DEV_RESOURCE_ID}" "${{ env.EXPORT_DIR }}"
+          RESOURCE_ID="/subscriptions/48773b9f-3806-4461-bb01-3e2a4253f178/resourceGroups/re_group987/providers/Microsoft.DataFactory/factories/datafactoryclass543"
+          npm run build export "$GITHUB_WORKSPACE/" "$RESOURCE_ID" "ExportedArmTemplate"
 
-      - name: Upload exported template
+      # Upload the exported template as an artifact
+      - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.EXPORT_DIR }}
-          path: build/${{ env.EXPORT_DIR }}
-          if-no-files-found: error
-          retention-days: 7
+          name: ExportedArmTemplate
+          path: build/ExportedArmTemplate
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    environment: production  # optional: use GH Environments/approvals
-
     steps:
-      - name: Download exported template
+      # Download the artifact into a folder named ExportedArmTemplate
+      - name: Download a Build Artifact
         uses: actions/download-artifact@v4
         with:
           name: ExportedArmTemplate
           path: ExportedArmTemplate
 
-      # OIDC login to Azure using federated credentials
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
+      - name: Login via Az module
+        uses: azure/login@v1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
-      # Deploy to target (PROD) Data Factory
-      - name: Deploy ARM template to ADF (prod)
+      - name: data-factory-deploy
         uses: Azure/data-factory-deploy-action@v1.2.0
         with:
           resourceGroupName: re_protect
-          dataFactoryName: datafactoryprotect   # <-- fix spelling if needed
+          dataFactoryName: datafactoryprotcect
           armTemplateFile: ExportedArmTemplate/ARMTemplateForFactory.json
           armTemplateParametersFile: ExportedArmTemplate/ARMTemplateParametersForFactory.json
-          # IMPORTANT: If parameters file contains "factoryName": ""
-          # uncomment the next line so deployments don’t fail with a blank factory name.
-          # additionalParameters: 'factoryName=datafactoryprotect'
-          # skipAzModuleInstallation: true
+          # If your parameters file requires the factory name, uncomment and ensure the key matches your JSON:
