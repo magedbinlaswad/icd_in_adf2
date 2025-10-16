@@ -10,7 +10,6 @@
 		"typeProperties": {
 			"location": {
 				"type": "AzureBlobFSLocation",
-				"fileName": "emp1.csv",
 				"fileSystem": "newdata"
 			},
 			"columnDelimiter": ",",
