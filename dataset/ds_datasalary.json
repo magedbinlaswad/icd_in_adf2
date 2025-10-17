@@ -1,0 +1,32 @@
+{
+	"name": "ds_datasalary",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "AzureDataLakeStorage2",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": "date_salary.csv",
+				"fileSystem": "salary"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"firstRowAsHeader": true,
+			"quoteChar": "\""
+		},
+		"schema": [
+			{
+				"name": "date",
+				"type": "String"
+			},
+			{
+				"name": "salary",
+				"type": "String"
+			}
+		]
+	}
+}
